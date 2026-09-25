@@ -1,6 +1,7 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { useIrrigation } from '../../context/IrrigationContext';
-import { WifiOff, AlertCircle, RefreshCw, Cpu, ExternalLink } from 'lucide-react';
+import { WifiOff, AlertCircle, RefreshCw, Cpu, ExternalLink, Settings } from 'lucide-react';
 import { Button } from '../common/Button';
 import { getApiBaseUrl } from '../../services/api';
 
@@ -44,7 +45,14 @@ export const OfflineBanner = () => {
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end">
+        <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto justify-end">
+          <Link
+            to="/settings"
+            className="inline-flex items-center justify-center font-medium rounded-lg px-3 py-1.5 text-xs gap-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 transition w-full sm:w-auto shadow-2xs"
+          >
+            <Settings className="w-3.5 h-3.5" />
+            Wi-Fi & Settings
+          </Link>
           <Button
             size="sm"
             variant="danger"

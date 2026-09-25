@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, History, Cpu, Droplets, Wifi, WifiOff } from 'lucide-react';
+import { LayoutDashboard, History, Cpu, Droplets, Wifi, WifiOff, Settings } from 'lucide-react';
 import { useIrrigation } from '../context/IrrigationContext';
 import { getApiBaseUrl } from '../services/api';
 
@@ -12,6 +12,7 @@ export const Sidebar = ({ isOpen, onClose }) => {
     { to: '/', label: 'Dashboard', icon: LayoutDashboard },
     { to: '/history', label: 'Irrigation History', icon: History },
     { to: '/sensors', label: 'Sensors & Charts', icon: Cpu },
+    { to: '/settings', label: 'Settings', icon: Settings },
   ];
 
   return (

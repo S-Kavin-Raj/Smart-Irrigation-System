@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Menu, User, Clock, RefreshCw } from 'lucide-react';
+import { NavLink } from 'react-router-dom';
+import { Menu, User, Clock, RefreshCw, Settings } from 'lucide-react';
 import { useIrrigation } from '../context/IrrigationContext';
 
 export const Header = ({ onToggleSidebar }) => {
@@ -74,6 +75,21 @@ export const Header = ({ onToggleSidebar }) => {
             )}
           </button>
         </div>
+
+        {/* Settings Shortcut */}
+        <NavLink
+          to="/settings"
+          title="System & Wi-Fi Settings"
+          className={({ isActive }) =>
+            `p-2 rounded-lg border transition ${
+              isActive
+                ? 'bg-brand-50 text-brand-700 border-brand-200'
+                : 'bg-white hover:bg-slate-50 text-slate-600 hover:text-slate-900 border-slate-200 shadow-2xs'
+            }`
+          }
+        >
+          <Settings className="w-4 h-4" />
+        </NavLink>
 
         {/* Profile Avatar */}
         <div className="flex items-center gap-2 pl-2 border-l border-slate-200">

@@ -3,7 +3,7 @@ import { Menu, User, Clock, RefreshCw } from 'lucide-react';
 import { useIrrigation } from '../context/IrrigationContext';
 
 export const Header = ({ onToggleSidebar }) => {
-  const { connectionStatus, deviceConnected, lastSeen, retryConnection } = useIrrigation();
+  const { connectionStatus, deviceConnected, lastSeen, retryConnection, wifiData } = useIrrigation();
   const [currentTime, setCurrentTime] = useState(new Date());
 
   useEffect(() => {
@@ -49,7 +49,7 @@ export const Header = ({ onToggleSidebar }) => {
             onClick={retryConnection}
             title={
               deviceConnected
-                ? `Connected to ESP8266. Last communication: ${lastSeen ? new Date(lastSeen).toLocaleTimeString() : 'Recent'}`
+                ? `Connected to ESP8266 (${wifiData?.ssid || 'MSI 2988'}). IP: ${wifiData?.ip || '192.168.137.253'}`
                 : 'Device not connected. Click to retry connection.'
             }
             className="flex items-center gap-2 px-3 py-1 bg-white hover:bg-slate-50 rounded-full border border-slate-200 text-xs font-medium transition cursor-pointer shadow-xs"
@@ -57,7 +57,9 @@ export const Header = ({ onToggleSidebar }) => {
             {connectionStatus === 'CONNECTED' ? (
               <>
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-emerald-700 font-semibold">ESP8266 Connected</span>
+                <span className="text-emerald-700 font-semibold">
+                  {wifiData?.ssid ? `ESP8266 (${wifiData.ssid})` : 'ESP8266 Connected'}
+                </span>
               </>
             ) : connectionStatus === 'CONNECTING' ? (
               <>

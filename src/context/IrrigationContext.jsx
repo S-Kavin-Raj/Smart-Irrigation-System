@@ -3,6 +3,7 @@ import { deviceService } from '../services/deviceService';
 import { sensorService } from '../services/sensorService';
 import { pumpService } from '../services/pumpService';
 import { irrigationService } from '../services/irrigationService';
+import { wifiService } from '../services/wifiService';
 import { getApiBaseUrl, setApiBaseUrl } from '../services/api';
 import { formatTime, formatDate, formatDuration } from '../utils/formatters';
 
@@ -10,7 +11,6 @@ const IrrigationContext = createContext(null);
 
 export const IrrigationProvider = ({ children }) => {
   // 1. Connection State: 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'ERROR'
-  // INITIAL STATE MUST BE DISCONNECTED (deviceConnected = false)
   const [connectionStatus, setConnectionStatus] = useState('DISCONNECTED');
   const [deviceConnected, setDeviceConnected] = useState(false);
   const [lastSeen, setLastSeen] = useState(null);
@@ -33,7 +33,13 @@ export const IrrigationProvider = ({ children }) => {
   // 4. Auto condition summary (computed ONLY if sensorData exists)
   const [autoStatus, setAutoStatus] = useState(null);
 
-  // 5. Toasts
+  // 5. Wi-Fi Multi-Hotspot State
+  const [wifiData, setWifiData] = useState(null);
+  const [wifiLoading, setWifiLoading] = useState(false);
+  const [wifiConnectingIndex, setWifiConnectingIndex] = useState(null);
+  const [wifiError, setWifiError] = useState(null);
+
+  // 6. Toasts
   const [toasts, setToasts] = useState([]);
 
   const showToast = useCallback((message, type = 'info', title = '') => {
@@ -53,7 +59,6 @@ export const IrrigationProvider = ({ children }) => {
   const lastSuccessfulHeartbeat = useRef(null);
 
   // Heartbeat & Telemetry Polling Loop
-  // Continuously checks whether the ESP8266/backend is reachable
   const checkDeviceConnection = useCallback(async () => {
     try {
       // 1. Check device status heartbeat
@@ -117,21 +122,15 @@ export const IrrigationProvider = ({ children }) => {
         }
 
       } else {
-        // Response received but device marked not connected
         handleDeviceDisconnect('Device returned disconnected status');
       }
     } catch (err) {
-      // Network failed / device unreachable
       handleDeviceDisconnect(err.message || 'Unable to communicate with device');
     }
   }, []);
 
   const handleDeviceDisconnect = useCallback((reason) => {
-    setConnectionStatus((prev) => {
-      // If we previously had error or disconnected, keep it
-      if (reason && reason.includes('timed out')) return 'DISCONNECTED';
-      return 'DISCONNECTED';
-    });
+    setConnectionStatus('DISCONNECTED');
     setDeviceConnected(false);
     setConnectionError(reason || 'ESP8266 is offline');
 
@@ -143,15 +142,45 @@ export const IrrigationProvider = ({ children }) => {
     setElapsedTime(0);
     setAutoStatus(null);
 
+    // Reflect disconnected in wifi state if present
+    setWifiData((prev) => (prev ? { ...prev, connected: false } : null));
+
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
   }, []);
 
+  // Poll Wi-Fi status from GET /api/wifi
+  const fetchWifiStatus = useCallback(async (silent = true) => {
+    if (!silent) setWifiLoading(true);
+    try {
+      const data = await wifiService.getStatus();
+      if (data && typeof data === 'object') {
+        setWifiData(data);
+        setWifiError(null);
+        if (data.ip || data.ssid) {
+          setDeviceInfo((prev) => ({
+            ...prev,
+            ipAddress: data.ip || prev?.ipAddress,
+            wifiSsid: data.ssid || prev?.wifiSsid,
+          }));
+        }
+      }
+      return data;
+    } catch (err) {
+      setWifiError(err.message || 'Wi-Fi status unavailable');
+      setWifiData((prev) => (prev ? { ...prev, connected: false } : null));
+      if (!silent) {
+        throw err;
+      }
+    } finally {
+      if (!silent) setWifiLoading(false);
+    }
+  }, []);
+
   // Run Heartbeat Poller every 4 seconds
   useEffect(() => {
-    // Initial attempt marked as CONNECTING
     setConnectionStatus('CONNECTING');
     checkDeviceConnection();
 
@@ -162,19 +191,24 @@ export const IrrigationProvider = ({ children }) => {
     return () => clearInterval(interval);
   }, [checkDeviceConnection]);
 
-  // Evaluate Auto Condition logic:
-  // Examples:
-  // - "Rain detected — irrigation locked"
-  // - "Soil is dry — irrigation required"
-  // - "Soil moisture adequate — irrigation not required"
-  // - "Manual mode — operator control"
-  // - "Device disconnected"
+  // Run Wi-Fi Polling every 6 seconds (within 5-10s requirement)
+  useEffect(() => {
+    fetchWifiStatus(true);
+
+    const wifiInterval = setInterval(() => {
+      fetchWifiStatus(true);
+    }, 6000);
+
+    return () => clearInterval(wifiInterval);
+  }, [fetchWifiStatus]);
+
+  // Evaluate Auto Condition logic
   useEffect(() => {
     if (!deviceConnected) {
       setAutoStatus({
         canRun: false,
-        reason: 'Device disconnected',
-        condition: 'DISCONNECTED'
+        reason: 'ESP Offline',
+        condition: 'DISCONNECTED',
       });
       return;
     }
@@ -183,7 +217,7 @@ export const IrrigationProvider = ({ children }) => {
       setAutoStatus({
         canRun: false,
         reason: 'Awaiting sensor readings',
-        condition: 'AWAITING'
+        condition: 'AWAITING',
       });
       return;
     }
@@ -197,7 +231,7 @@ export const IrrigationProvider = ({ children }) => {
       setAutoStatus({
         canRun: pumpState === 'ON',
         reason: 'Manual mode — operator control',
-        condition: 'MANUAL'
+        condition: 'MANUAL',
       });
       return;
     }
@@ -206,31 +240,30 @@ export const IrrigationProvider = ({ children }) => {
       setAutoStatus({
         canRun: false,
         reason: 'Rain detected — irrigation locked',
-        condition: 'RAIN_LOCKED'
+        condition: 'RAIN_LOCKED',
       });
     } else if (typeof soilMoisture === 'number' && soilMoisture <= threshold) {
       setAutoStatus({
         canRun: true,
         reason: 'Soil is dry — irrigation required',
-        condition: 'SOIL_DRY'
+        condition: 'SOIL_DRY',
       });
     } else if (typeof soilMoisture === 'number') {
       setAutoStatus({
         canRun: false,
         reason: 'Soil moisture adequate — irrigation not required',
-        condition: 'SOIL_ADEQUATE'
+        condition: 'SOIL_ADEQUATE',
       });
     } else {
       setAutoStatus({
         canRun: false,
         reason: 'Awaiting sensor readings',
-        condition: 'AWAITING'
+        condition: 'AWAITING',
       });
     }
   }, [deviceConnected, sensorData, pumpState]);
 
   // REAL PUMP CONTROL
-  // Send START command to ESP8266 and wait for confirmation
   const startManualPump = useCallback(async (duration) => {
     if (!deviceConnected) {
       showToast('Pump control unavailable — device not connected.', 'error', 'Device Disconnected');
@@ -241,10 +274,8 @@ export const IrrigationProvider = ({ children }) => {
     setCommandStatus('Starting pump...');
 
     try {
-      // POST /api/pump/start with { duration }
       await pumpService.start(targetDuration);
 
-      // Poll GET /api/pump to confirm the physical pump state is ON
       let confirmedOn = false;
       const pollStart = Date.now();
 
@@ -261,7 +292,6 @@ export const IrrigationProvider = ({ children }) => {
             setElapsedTime(0);
             showToast(`ESP8266 confirmed pump ON (${targetDuration}s)`, 'success', 'Relay Engaged');
 
-            // Only then start the countdown timer
             if (timerRef.current) clearInterval(timerRef.current);
             let rem = remaining;
             timerRef.current = setInterval(() => {
@@ -293,7 +323,6 @@ export const IrrigationProvider = ({ children }) => {
     }
   }, [deviceConnected, selectedDuration, showToast, checkDeviceConnection]);
 
-  // Send STOP command to ESP8266 and wait for confirmation
   const stopPumpNow = useCallback(async () => {
     if (!deviceConnected) {
       showToast('Pump control unavailable — device not connected.', 'error', 'Device Disconnected');
@@ -308,10 +337,8 @@ export const IrrigationProvider = ({ children }) => {
     }
 
     try {
-      // POST /api/pump/stop with { reason: "manual_stop" }
       await pumpService.stop('manual_stop');
 
-      // Poll to confirm physical OFF state
       let confirmedOff = false;
       const pollStart = Date.now();
       while (Date.now() - pollStart < 2500) {
@@ -331,7 +358,6 @@ export const IrrigationProvider = ({ children }) => {
       setCommandStatus(null);
       setRemainingTime(0);
       showToast('ESP8266 confirmed pump OFF', 'info', 'Relay Disengaged');
-      // Refresh real history from device
       checkDeviceConnection();
     } catch (err) {
       setCommandStatus('Command failed');
@@ -339,7 +365,6 @@ export const IrrigationProvider = ({ children }) => {
     }
   }, [deviceConnected, showToast, checkDeviceConnection]);
 
-  // Change Operating Mode on ESP8266 (AUTO / MANUAL)
   const setIrrigationMode = useCallback(async (mode) => {
     if (!deviceConnected) {
       showToast('Mode control unavailable — device not connected.', 'error', 'Device Disconnected');
@@ -348,14 +373,13 @@ export const IrrigationProvider = ({ children }) => {
 
     try {
       await pumpService.setMode(mode);
-      setSensorData((prev) => prev ? { ...prev, irrigationMode: mode } : null);
+      setSensorData((prev) => (prev ? { ...prev, irrigationMode: mode } : null));
       showToast(`Mode set to ${mode} on ESP8266`, 'info', 'Mode Updated');
     } catch (err) {
       showToast(err.message || 'Failed to set mode on device.', 'error', 'Error');
     }
   }, [deviceConnected, showToast]);
 
-  // Update Settings on ESP8266
   const updateSettings = useCallback(async (newSettings) => {
     try {
       if (newSettings.espEndpointUrl) {
@@ -366,36 +390,115 @@ export const IrrigationProvider = ({ children }) => {
       }
       showToast('Settings saved.', 'success', 'Saved');
       checkDeviceConnection();
+      fetchWifiStatus(true);
     } catch (err) {
       showToast(err.message || 'Could not save settings to device.', 'error', 'Error');
     }
-  }, [deviceConnected, showToast, checkDeviceConnection]);
+  }, [deviceConnected, showToast, checkDeviceConnection, fetchWifiStatus]);
 
-  // Manual Trigger to retry connecting
+  // Connect to a saved Wi-Fi network on ESP8266
+  const connectWifiNetwork = useCallback(async (index, targetSsid) => {
+    if (wifiConnectingIndex !== null) return;
+    setWifiConnectingIndex(index);
+    showToast('Connection attempt started', 'info', 'Wi-Fi Connection');
+
+    try {
+      await wifiService.connectNetwork(index);
+
+      // Poll GET /api/wifi waiting for connected: true and matching SSID
+      let connectedSuccessfully = false;
+      const startTime = Date.now();
+      const maxWaitMs = 18000;
+
+      while (Date.now() - startTime < maxWaitMs) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        try {
+          const status = await wifiService.getStatus();
+          if (status) {
+            setWifiData(status);
+            const matchesSsid = targetSsid ? status.ssid === targetSsid : true;
+            if (status.connected === true && matchesSsid) {
+              connectedSuccessfully = true;
+              showToast(`Connected to ${status.ssid || targetSsid}`, 'success', 'Wi-Fi Connected');
+              checkDeviceConnection();
+              break;
+            }
+          }
+        } catch {
+          // Device may restart Wi-Fi stack while switching networks
+        }
+      }
+
+      if (!connectedSuccessfully) {
+        try {
+          const finalStatus = await wifiService.getStatus();
+          if (finalStatus) setWifiData(finalStatus);
+        } catch {}
+        showToast('Connection attempt in progress or waiting for ESP8266 to acquire IP.', 'warning', 'Connection Pending');
+      }
+    } catch (err) {
+      showToast(err.message || 'Failed to initiate Wi-Fi connection.', 'error', 'Wi-Fi Error');
+    } finally {
+      setWifiConnectingIndex(null);
+    }
+  }, [wifiConnectingIndex, showToast, checkDeviceConnection]);
+
+  // Add Wi-Fi network (credentials sent directly to ESP8266; never stored in localStorage)
+  const addWifiNetwork = useCallback(async (ssid, password) => {
+    try {
+      await wifiService.addNetwork(ssid, password);
+      showToast(`Wi-Fi network "${ssid}" saved successfully.`, 'success', 'Network Saved');
+      await fetchWifiStatus(false);
+      return true;
+    } catch (err) {
+      showToast(err.message || 'Failed to save Wi-Fi network.', 'error', 'Save Error');
+      throw err;
+    }
+  }, [showToast, fetchWifiStatus]);
+
+  // Remove Wi-Fi network by index
+  const removeWifiNetwork = useCallback(async (index, ssid) => {
+    try {
+      await wifiService.removeNetwork(index);
+      showToast(ssid ? `Removed "${ssid}" from saved networks.` : 'Network removed.', 'info', 'Network Removed');
+      await fetchWifiStatus(false);
+      return true;
+    } catch (err) {
+      showToast(err.message || 'Failed to remove Wi-Fi network.', 'error', 'Remove Error');
+      throw err;
+    }
+  }, [showToast, fetchWifiStatus]);
+
+  // Manual trigger to retry connecting
   const retryConnection = useCallback(() => {
     setConnectionStatus('CONNECTING');
     showToast('Attempting to reconnect to ESP8266...', 'info', 'Reconnecting');
     checkDeviceConnection();
-  }, [showToast, checkDeviceConnection]);
+    fetchWifiStatus(false);
+  }, [showToast, checkDeviceConnection, fetchWifiStatus]);
 
   return (
     <IrrigationContext.Provider
       value={{
-        connectionStatus, // 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'ERROR'
-        deviceConnected, // boolean (initial: false)
+        connectionStatus,
+        deviceConnected,
         lastSeen,
         deviceInfo,
         connectionError,
-        sensorData, // null when disconnected
-        history, // [] when disconnected
+        sensorData,
+        history,
         trendData,
-        pumpState, // 'Unknown' | 'OFF' | 'ON'
+        pumpState,
         commandStatus,
         selectedDuration,
         setSelectedDuration,
         remainingTime,
         elapsedTime,
         autoStatus,
+        wifiData,
+        wifiLoading,
+        wifiConnectingIndex,
+        wifiError,
         toasts,
         showToast,
         removeToast,
@@ -404,7 +507,11 @@ export const IrrigationProvider = ({ children }) => {
         setIrrigationMode,
         updateSettings,
         retryConnection,
-        checkDeviceConnection
+        checkDeviceConnection,
+        fetchWifiStatus,
+        connectWifiNetwork,
+        addWifiNetwork,
+        removeWifiNetwork,
       }}
     >
       {children}

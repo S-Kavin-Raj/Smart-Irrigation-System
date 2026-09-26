@@ -10,27 +10,25 @@ const IrrigationContext = createContext(null);
 
 export const IrrigationProvider = ({ children }) => {
   // 1. Connection State: 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'ERROR'
-  // INITIAL STATE MUST BE DISCONNECTED (deviceConnected = false)
-  const [connectionStatus, setConnectionStatus] = useState('DISCONNECTED');
+  const [connectionStatus, setConnectionStatus] = useState('CONNECTING');
   const [deviceConnected, setDeviceConnected] = useState(false);
   const [lastSeen, setLastSeen] = useState(null);
   const [deviceInfo, setDeviceInfo] = useState(null);
   const [connectionError, setConnectionError] = useState(null);
 
-  // 2. Real Telemetry State - ZERO MOCK DATA. Defaults to null.
+  // 2. Real Telemetry State - Zero mock data
   const [sensorData, setSensorData] = useState(null);
   const [history, setHistory] = useState([]);
   const [trendData, setTrendData] = useState([]);
 
-  // 3. Hardware Pump State - Determined ONLY by ESP8266
-  // Defaults to 'Unknown' when not connected
+  // 3. Hardware Pump State: 'ON' | 'OFF' | 'Unknown'
   const [pumpState, setPumpState] = useState('Unknown');
   const [commandStatus, setCommandStatus] = useState(null);
   const [selectedDuration, setSelectedDuration] = useState(60);
   const [remainingTime, setRemainingTime] = useState(null);
   const [elapsedTime, setElapsedTime] = useState(0);
 
-  // 4. Auto condition summary (computed ONLY if sensorData exists)
+  // 4. Auto condition summary
   const [autoStatus, setAutoStatus] = useState(null);
 
   // 5. Toasts
@@ -48,52 +46,50 @@ export const IrrigationProvider = ({ children }) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  // Timer Ref for countdown
   const timerRef = useRef(null);
-  const lastSuccessfulHeartbeat = useRef(null);
 
-  // Heartbeat & Telemetry Polling Loop
-  // Continuously checks whether the ESP8266/backend is reachable
+  // Heartbeat & Telemetry Poller
   const checkDeviceConnection = useCallback(async () => {
     try {
-      // 1. Check device status heartbeat
+      // 1. Device status
       const statusRes = await deviceService.getStatus();
 
-      if (statusRes && (statusRes.connected === true || statusRes.status?.toLowerCase() === 'online' || statusRes.deviceId)) {
+      if (statusRes && statusRes.connected === true) {
         setConnectionStatus('CONNECTED');
         setDeviceConnected(true);
         setConnectionError(null);
-        const seenTime = statusRes.lastSeen || new Date().toISOString();
-        setLastSeen(seenTime);
-        lastSuccessfulHeartbeat.current = Date.now();
+        setLastSeen(statusRes.lastSeen || new Date().toISOString());
         setDeviceInfo(statusRes);
 
-        // 2. Fetch real sensor data from ESP8266
-        try {
-          const sensors = await sensorService.getSensors();
-          if (sensors) {
-            setSensorData(sensors);
-            if (sensors.pumpState) {
-              setPumpState(sensors.pumpState);
-            }
-          }
-        } catch (sErr) {
-          console.warn('Sensors endpoint fetch failed:', sErr);
-        }
-
-        // 3. Fetch real pump state from ESP8266
+        // 2. Fetch real pump state first
+        let currentMode = statusRes.pumpMode || 'AUTO';
         try {
           const pumpRes = await pumpService.getStatus();
           if (pumpRes) {
-            if (pumpRes.pumpState) {
-              setPumpState(pumpRes.pumpState);
+            const isPumpOn = pumpRes.running === true || pumpRes.pumpState === 'ON';
+            setPumpState(isPumpOn ? 'ON' : 'OFF');
+            if (pumpRes.mode) {
+              currentMode = pumpRes.mode;
             }
             if (pumpRes.remainingSeconds !== undefined) {
               setRemainingTime(pumpRes.remainingSeconds);
             }
           }
         } catch (pErr) {
-          console.warn('Pump status endpoint fetch failed:', pErr);
+          console.warn('Pump status endpoint error:', pErr);
+        }
+
+        // 3. Fetch real sensor data
+        try {
+          const sensors = await sensorService.getSensors();
+          if (sensors) {
+            setSensorData({
+              ...sensors,
+              irrigationMode: currentMode
+            });
+          }
+        } catch (sErr) {
+          console.warn('Sensors endpoint error:', sErr);
         }
 
         // 4. Fetch real irrigation history
@@ -103,45 +99,42 @@ export const IrrigationProvider = ({ children }) => {
             setHistory(hist);
           }
         } catch (hErr) {
-          console.warn('History endpoint fetch failed:', hErr);
+          console.warn('History endpoint error:', hErr);
         }
 
-        // 5. Fetch trends if available
+        // 5. Fetch trends
         try {
           const trends = await sensorService.getTrends();
           if (Array.isArray(trends)) {
             setTrendData(trends);
           }
         } catch (tErr) {
-          // Trend endpoint optional on microcontroller
+          console.warn('Trends endpoint error:', tErr);
         }
 
       } else {
-        // Response received but device marked not connected
         handleDeviceDisconnect('Device returned disconnected status');
       }
     } catch (err) {
-      // Network failed / device unreachable
       handleDeviceDisconnect(err.message || 'Unable to communicate with device');
     }
   }, []);
 
   const handleDeviceDisconnect = useCallback((reason) => {
-    setConnectionStatus((prev) => {
-      // If we previously had error or disconnected, keep it
-      if (reason && reason.includes('timed out')) return 'DISCONNECTED';
-      return 'DISCONNECTED';
-    });
+    setConnectionStatus('DISCONNECTED');
     setDeviceConnected(false);
     setConnectionError(reason || 'ESP8266 is offline');
 
-    // Reset sensor data to null (NO FAKE / DEFAULT VALUES)
     setSensorData(null);
     setPumpState('Unknown');
     setCommandStatus(null);
     setRemainingTime(null);
     setElapsedTime(0);
-    setAutoStatus(null);
+    setAutoStatus({
+      canRun: false,
+      reason: 'Device disconnected',
+      condition: 'DISCONNECTED'
+    });
 
     if (timerRef.current) {
       clearInterval(timerRef.current);
@@ -149,26 +142,17 @@ export const IrrigationProvider = ({ children }) => {
     }
   }, []);
 
-  // Run Heartbeat Poller every 4 seconds
+  // Polling loop: every 3 seconds for live telemetry
   useEffect(() => {
-    // Initial attempt marked as CONNECTING
-    setConnectionStatus('CONNECTING');
     checkDeviceConnection();
-
     const interval = setInterval(() => {
       checkDeviceConnection();
-    }, 4000);
+    }, 3000);
 
     return () => clearInterval(interval);
   }, [checkDeviceConnection]);
 
-  // Evaluate Auto Condition logic:
-  // Examples:
-  // - "Rain detected — irrigation locked"
-  // - "Soil is dry — irrigation required"
-  // - "Soil moisture adequate — irrigation not required"
-  // - "Manual mode — operator control"
-  // - "Device disconnected"
+  // Evaluate Auto Condition logic
   useEffect(() => {
     if (!deviceConnected) {
       setAutoStatus({
@@ -196,7 +180,7 @@ export const IrrigationProvider = ({ children }) => {
     if (mode === 'MANUAL') {
       setAutoStatus({
         canRun: pumpState === 'ON',
-        reason: 'Manual mode — operator control',
+        reason: 'Manual mode - operator control',
         condition: 'MANUAL'
       });
       return;
@@ -205,19 +189,19 @@ export const IrrigationProvider = ({ children }) => {
     if (rainDetected && rainProtection) {
       setAutoStatus({
         canRun: false,
-        reason: 'Rain detected — irrigation locked',
+        reason: 'Rain detected - irrigation locked',
         condition: 'RAIN_LOCKED'
       });
     } else if (typeof soilMoisture === 'number' && soilMoisture <= threshold) {
       setAutoStatus({
         canRun: true,
-        reason: 'Soil is dry — irrigation required',
+        reason: 'Soil is dry - irrigation required',
         condition: 'SOIL_DRY'
       });
     } else if (typeof soilMoisture === 'number') {
       setAutoStatus({
         canRun: false,
-        reason: 'Soil moisture adequate — irrigation not required',
+        reason: 'Soil moisture adequate - irrigation not required',
         condition: 'SOIL_ADEQUATE'
       });
     } else {
@@ -230,10 +214,9 @@ export const IrrigationProvider = ({ children }) => {
   }, [deviceConnected, sensorData, pumpState]);
 
   // REAL PUMP CONTROL
-  // Send START command to ESP8266 and wait for confirmation
   const startManualPump = useCallback(async (duration) => {
     if (!deviceConnected) {
-      showToast('Pump control unavailable — device not connected.', 'error', 'Device Disconnected');
+      showToast('Pump control unavailable - device not connected.', 'error', 'Device Disconnected');
       return;
     }
 
@@ -241,27 +224,25 @@ export const IrrigationProvider = ({ children }) => {
     setCommandStatus('Starting pump...');
 
     try {
-      // POST /api/pump/start with { duration }
       await pumpService.start(targetDuration);
 
-      // Poll GET /api/pump to confirm the physical pump state is ON
+      // Poll to confirm physical pump state is ON
       let confirmedOn = false;
       const pollStart = Date.now();
 
-      while (Date.now() - pollStart < 3500) {
-        await new Promise((resolve) => setTimeout(resolve, 600));
+      while (Date.now() - pollStart < 4000) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
         try {
           const confirmed = await pumpService.getStatus();
-          if (confirmed && (confirmed.pumpState === 'ON' || confirmed.status === 'ON')) {
+          if (confirmed && confirmed.running === true) {
             confirmedOn = true;
             setPumpState('ON');
             setCommandStatus(null);
-            const remaining = confirmed.remainingSeconds ?? targetDuration;
+            const remaining = confirmed.remainingSeconds || targetDuration;
             setRemainingTime(remaining);
             setElapsedTime(0);
-            showToast(`ESP8266 confirmed pump ON (${targetDuration}s)`, 'success', 'Relay Engaged');
+            showToast(`Pump ON (${targetDuration}s)`, 'success', 'Relay Engaged');
 
-            // Only then start the countdown timer
             if (timerRef.current) clearInterval(timerRef.current);
             let rem = remaining;
             timerRef.current = setInterval(() => {
@@ -278,14 +259,12 @@ export const IrrigationProvider = ({ children }) => {
 
             break;
           }
-        } catch {
-          // Poll retry
-        }
+        } catch {}
       }
 
       if (!confirmedOn) {
-        setCommandStatus('Unable to confirm pump state');
-        showToast('Unable to confirm pump state from ESP8266.', 'warning', 'Confirmation Pending');
+        setCommandStatus(null);
+        checkDeviceConnection();
       }
     } catch (err) {
       setCommandStatus('Command failed');
@@ -293,10 +272,9 @@ export const IrrigationProvider = ({ children }) => {
     }
   }, [deviceConnected, selectedDuration, showToast, checkDeviceConnection]);
 
-  // Send STOP command to ESP8266 and wait for confirmation
   const stopPumpNow = useCallback(async () => {
     if (!deviceConnected) {
-      showToast('Pump control unavailable — device not connected.', 'error', 'Device Disconnected');
+      showToast('Pump control unavailable - device not connected.', 'error', 'Device Disconnected');
       return;
     }
 
@@ -308,30 +286,26 @@ export const IrrigationProvider = ({ children }) => {
     }
 
     try {
-      // POST /api/pump/stop with { reason: "manual_stop" }
       await pumpService.stop('manual_stop');
 
       // Poll to confirm physical OFF state
       let confirmedOff = false;
       const pollStart = Date.now();
-      while (Date.now() - pollStart < 2500) {
+      while (Date.now() - pollStart < 3000) {
         await new Promise((resolve) => setTimeout(resolve, 500));
         try {
           const confirmed = await pumpService.getStatus();
-          if (confirmed && (confirmed.pumpState === 'OFF' || confirmed.status === 'OFF')) {
+          if (confirmed && confirmed.running === false) {
             confirmedOff = true;
             break;
           }
-        } catch {
-          // Poll retry
-        }
+        } catch {}
       }
 
       setPumpState('OFF');
       setCommandStatus(null);
       setRemainingTime(0);
-      showToast('ESP8266 confirmed pump OFF', 'info', 'Relay Disengaged');
-      // Refresh real history from device
+      showToast('Pump OFF', 'info', 'Relay Disengaged');
       checkDeviceConnection();
     } catch (err) {
       setCommandStatus('Command failed');
@@ -339,10 +313,9 @@ export const IrrigationProvider = ({ children }) => {
     }
   }, [deviceConnected, showToast, checkDeviceConnection]);
 
-  // Change Operating Mode on ESP8266 (AUTO / MANUAL)
   const setIrrigationMode = useCallback(async (mode) => {
     if (!deviceConnected) {
-      showToast('Mode control unavailable — device not connected.', 'error', 'Device Disconnected');
+      showToast('Mode control unavailable - device not connected.', 'error', 'Device Disconnected');
       return;
     }
 
@@ -350,12 +323,12 @@ export const IrrigationProvider = ({ children }) => {
       await pumpService.setMode(mode);
       setSensorData((prev) => prev ? { ...prev, irrigationMode: mode } : null);
       showToast(`Mode set to ${mode} on ESP8266`, 'info', 'Mode Updated');
+      checkDeviceConnection();
     } catch (err) {
       showToast(err.message || 'Failed to set mode on device.', 'error', 'Error');
     }
-  }, [deviceConnected, showToast]);
+  }, [deviceConnected, showToast, checkDeviceConnection]);
 
-  // Update Settings on ESP8266
   const updateSettings = useCallback(async (newSettings) => {
     try {
       if (newSettings.espEndpointUrl) {
@@ -371,7 +344,6 @@ export const IrrigationProvider = ({ children }) => {
     }
   }, [deviceConnected, showToast, checkDeviceConnection]);
 
-  // Manual Trigger to retry connecting
   const retryConnection = useCallback(() => {
     setConnectionStatus('CONNECTING');
     showToast('Attempting to reconnect to ESP8266...', 'info', 'Reconnecting');
@@ -381,15 +353,15 @@ export const IrrigationProvider = ({ children }) => {
   return (
     <IrrigationContext.Provider
       value={{
-        connectionStatus, // 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'ERROR'
-        deviceConnected, // boolean (initial: false)
+        connectionStatus,
+        deviceConnected,
         lastSeen,
         deviceInfo,
         connectionError,
-        sensorData, // null when disconnected
-        history, // [] when disconnected
+        sensorData,
+        history,
         trendData,
-        pumpState, // 'Unknown' | 'OFF' | 'ON'
+        pumpState, // 'ON' | 'OFF' | 'Unknown'
         commandStatus,
         selectedDuration,
         setSelectedDuration,

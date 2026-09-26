@@ -130,10 +130,13 @@ export const PumpControlCard = () => {
             <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">
               Hardware Relay State
             </span>
+            <span className="text-xs font-semibold text-slate-600 block">
+              {deviceConnected ? (isPumpRunning ? "Relay D1 • Running" : "Relay D1 • Standby") : "Relay D1 • Offline"}
+            </span>
             <div className="text-xl font-bold text-slate-900 flex items-center justify-center gap-2">
               <span>
                 {!deviceConnected
-                  ? 'DEVICE OFFLINE'
+                  ? 'ESP OFFLINE'
                   : isPumpRunning
                   ? 'PUMP IS RUNNING'
                   : 'PUMP IS OFF'}
@@ -294,3 +297,4 @@ export const PumpControlCard = () => {
     </Card>
   );
 };
+

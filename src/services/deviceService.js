@@ -6,7 +6,25 @@ export const deviceService = {
    * Endpoint: GET /api/device/status
    */
   async getStatus() {
-    return await apiClient('/device/status', { timeoutMs: 3000 });
+    const res = await apiClient('/device/status', { timeoutMs: 3000 });
+    if (!res) return null;
+    const isConn = res.connected === true || (res.ip && res.ip !== '0.0.0.0');
+    return {
+      connected: isConn,
+      status: isConn ? 'Online' : 'Offline',
+      deviceId: res.device || res.deviceId || 'AquaFlow ESP8266',
+      device: res.device || res.deviceId || 'AquaFlow ESP8266',
+      ssid: res.ssid || res.wifiSsid || '',
+      wifiSsid: res.ssid || res.wifiSsid || '',
+      ip: res.ip || res.ipAddress || '',
+      ipAddress: res.ip || res.ipAddress || '',
+      rssi: res.rssi ?? null,
+      pumpRunning: res.pumpRunning ?? res.running ?? false,
+      pumpMode: res.pumpMode || res.mode || 'AUTO',
+      uptimeSeconds: res.uptimeSeconds ?? 0,
+      macAddress: res.macAddress || '',
+      lastSeen: new Date().toISOString()
+    };
   },
 
   /**

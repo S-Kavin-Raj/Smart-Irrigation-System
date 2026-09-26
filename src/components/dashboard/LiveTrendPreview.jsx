@@ -78,11 +78,11 @@ export const LiveTrendPreview = () => {
         </div>
       </div>
 
-      {/* Chart or Offline Notice */}
+      {/* Chart or Empty Notice */}
       {!hasData ? (
         <div className="h-48 sm:h-56 flex flex-col items-center justify-center bg-slate-50 rounded-xl border border-dashed border-slate-200 text-center p-4">
           <WifiOff className="w-8 h-8 text-slate-300 mb-2" />
-          <p className="text-xs font-semibold text-slate-600">No Historical Telemetry Data</p>
+          <p className="text-xs font-semibold text-slate-600">No historical telemetry yet</p>
           <p className="text-[11px] text-slate-400 mt-0.5">
             {deviceConnected
               ? 'Awaiting telemetry samples from ESP8266...'

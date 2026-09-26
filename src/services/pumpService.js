@@ -4,10 +4,20 @@ export const pumpService = {
   /**
    * Fetch current hardware pump status from ESP8266
    * Endpoint: GET /api/pump
-   * Expected: { pumpState: 'ON'|'OFF', mode: 'AUTO'|'MANUAL', runningDurationSeconds, remainingSeconds }
+   * Expected: { running: boolean, mode: 'AUTO'|'MANUAL', runtimeSeconds: number }
    */
   async getStatus() {
-    return await apiClient('/pump', { timeoutMs: 3000 });
+    const res = await apiClient('/pump', { timeoutMs: 3000 });
+    if (!res) return null;
+    const isRunning = res.running === true || res.pumpState === 'ON' || res.status === 'ON';
+    return {
+      running: isRunning,
+      pumpState: isRunning ? 'ON' : 'OFF',
+      status: isRunning ? 'ON' : 'OFF',
+      mode: res.mode || res.pumpMode || 'AUTO',
+      runtimeSeconds: res.runtimeSeconds ?? res.runningDurationSeconds ?? 0,
+      remainingSeconds: res.remainingSeconds ?? 0
+    };
   },
 
   /**

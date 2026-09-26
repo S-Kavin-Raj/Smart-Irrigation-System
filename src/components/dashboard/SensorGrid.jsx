@@ -7,39 +7,41 @@ import { getMoistureStatus, formatDuration } from '../../utils/formatters';
 export const SensorGrid = () => {
   const { sensorData, deviceConnected, pumpState, remainingTime, elapsedTime } = useIrrigation();
 
-  // If device is not connected or sensorData is null, values MUST be "--"
-  const soilMoistureVal = (deviceConnected && sensorData?.soilMoisture !== undefined)
+  const isConnected = deviceConnected;
+
+  const soilMoistureVal = (isConnected && sensorData?.soilMoisture !== undefined && sensorData?.soilMoisture !== null)
     ? sensorData.soilMoisture
     : '--';
 
-  const temperatureVal = (deviceConnected && sensorData?.temperature !== undefined)
+  const temperatureVal = (isConnected && sensorData?.temperature !== undefined && sensorData?.temperature !== null)
     ? sensorData.temperature
     : '--';
 
-  const humidityVal = (deviceConnected && sensorData?.humidity !== undefined)
+  const humidityVal = (isConnected && sensorData?.humidity !== undefined && sensorData?.humidity !== null)
     ? sensorData.humidity
     : '--';
 
-  const rainVal = (deviceConnected && sensorData?.rainDetected !== undefined)
-    ? (sensorData.rainDetected ? 'Rain Detected' : 'No Rain')
+  const rainVal = (isConnected && sensorData?.rainDetected !== undefined)
+    ? (sensorData.rainDetected ? 'Detected' : 'Not Detected')
     : '--';
 
-  const pumpStatusVal = deviceConnected
-    ? pumpState
+  const pumpStatusVal = isConnected
+    ? (pumpState === 'ON' ? 'ON' : 'OFF')
     : '--';
 
-  const irrigationModeVal = (deviceConnected && sensorData?.irrigationMode)
+  const irrigationModeVal = (isConnected && sensorData?.irrigationMode)
     ? sensorData.irrigationMode
     : '--';
 
-  // Status badges only when connected
-  const moistureStatus = (deviceConnected && typeof soilMoistureVal === 'number')
+  const moistureStatus = (isConnected && typeof soilMoistureVal === 'number')
     ? getMoistureStatus(soilMoistureVal)
     : null;
 
-  const rainStatus = (deviceConnected && sensorData?.rainDetected !== undefined)
+  const rainStatus = (isConnected && sensorData?.rainDetected !== undefined)
     ? (sensorData.rainDetected ? 'Rain Active' : 'Clear Sky')
     : null;
+
+  const isPumpOn = isConnected && pumpState === 'ON';
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 mb-6">
@@ -53,7 +55,7 @@ export const SensorGrid = () => {
         icon={Droplets}
         variant="blue"
         footer={
-          deviceConnected && typeof soilMoistureVal === 'number' ? (
+          isConnected && typeof soilMoistureVal === 'number' ? (
             <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mt-1">
               <div
                 className={`h-full transition-all duration-500 ${
@@ -63,7 +65,7 @@ export const SensorGrid = () => {
               />
             </div>
           ) : (
-            <span className="text-[11px] text-slate-400">Sensor offline — no telemetry</span>
+            <span className="text-[11px] text-slate-400">Sensor offline - no telemetry</span>
           )
         }
       />
@@ -74,12 +76,12 @@ export const SensorGrid = () => {
         subtitle="DHT11 Sensor (D4)"
         value={temperatureVal}
         unit={typeof temperatureVal === 'number' ? '°C' : ''}
-        status={deviceConnected && typeof temperatureVal === 'number' ? `${(temperatureVal * 1.8 + 32).toFixed(1)}°F` : null}
+        status={isConnected && typeof temperatureVal === 'number' ? `${(temperatureVal * 1.8 + 32).toFixed(1)}°F` : null}
         icon={Thermometer}
         variant="amber"
         footer={
           <span className="text-[11px] text-slate-400">
-            {deviceConnected ? 'Ambient field temperature' : 'Sensor offline — no telemetry'}
+            {isConnected ? 'Ambient field temperature' : 'Sensor offline - no telemetry'}
           </span>
         }
       />
@@ -91,7 +93,7 @@ export const SensorGrid = () => {
         value={humidityVal}
         unit={typeof humidityVal === 'number' ? '%' : ''}
         status={
-          deviceConnected && typeof humidityVal === 'number'
+          isConnected && typeof humidityVal === 'number'
             ? (humidityVal > 70 ? 'High' : humidityVal < 40 ? 'Low' : 'Optimal')
             : null
         }
@@ -99,7 +101,7 @@ export const SensorGrid = () => {
         variant="indigo"
         footer={
           <span className="text-[11px] text-slate-400">
-            {deviceConnected ? 'Relative atmospheric moisture' : 'Sensor offline — no telemetry'}
+            {isConnected ? 'Relative atmospheric moisture' : 'Sensor offline - no telemetry'}
           </span>
         }
       />
@@ -111,12 +113,12 @@ export const SensorGrid = () => {
         value={rainVal}
         status={rainStatus}
         icon={CloudRain}
-        variant={rainVal === 'Rain Detected' ? 'blue' : 'emerald'}
+        variant={sensorData?.rainDetected ? 'blue' : 'emerald'}
         footer={
           <span className="text-[11px] text-slate-400">
-            {deviceConnected
+            {isConnected
               ? (sensorData?.rainDetected ? 'Rain protection active' : 'Clear weather conditions')
-              : 'Sensor offline — no telemetry'}
+              : 'Sensor offline - no telemetry'}
           </span>
         }
       />
@@ -124,20 +126,20 @@ export const SensorGrid = () => {
       {/* 5. Pump Status */}
       <SensorCard
         title="Pump Status"
-        subtitle="12V Submersible (Relay D1)"
+        subtitle="Relay D1"
         value={pumpStatusVal}
-        status={deviceConnected ? (pumpState === 'ON' ? 'Active Relay' : 'Standby') : 'Disconnected'}
+        status={isConnected ? (isPumpOn ? 'Active' : 'Standby') : 'Disconnected'}
         icon={Power}
-        variant={pumpState === 'ON' ? 'emerald' : 'blue'}
-        active={pumpState === 'ON'}
+        variant={isPumpOn ? 'emerald' : 'blue'}
+        active={isPumpOn}
         footer={
           <div className="flex justify-between items-center text-xs">
-            <span className="text-slate-500">
-              {deviceConnected
-                ? (pumpState === 'ON' ? `Running: ${formatDuration(elapsedTime)}` : 'Relay Standby (Low)')
-                : 'Relay state unknown'}
+            <span className="text-slate-600 font-medium">
+              {isConnected
+                ? (isPumpOn ? `Relay D1 • Running (${formatDuration(elapsedTime)})` : 'Relay D1 • Standby')
+                : 'ESP Offline'}
             </span>
-            {pumpState === 'ON' && (
+            {isPumpOn && (
               <span className="text-brand-600 font-semibold flex items-center gap-1">
                 <span className="w-2 h-2 rounded-full bg-brand-500 animate-ping" />
                 Live
@@ -152,14 +154,14 @@ export const SensorGrid = () => {
         title="Irrigation Mode"
         subtitle="System Control Policy"
         value={irrigationModeVal}
-        status={deviceConnected ? (irrigationModeVal === 'AUTO' ? 'Autonomous' : 'Manual') : null}
+        status={isConnected ? (irrigationModeVal === 'AUTO' ? 'Autonomous' : 'Manual') : null}
         icon={Cpu}
         variant="blue"
         footer={
           <span className="text-[11px] text-slate-400">
-            {deviceConnected
+            {isConnected
               ? (irrigationModeVal === 'AUTO' ? 'Autonomous threshold policy' : 'Operator controlled duration')
-              : 'Connect ESP8266 to configure'}
+              : 'ESP Offline'}
           </span>
         }
       />

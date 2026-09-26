@@ -2,13 +2,11 @@ import { apiClient } from './api';
 import { deviceService } from './deviceService';
 import { sensorService } from './sensorService';
 import { pumpService } from './pumpService';
-import { wifiService } from './wifiService';
 
 export const irrigationService = {
   device: deviceService,
   sensors: sensorService,
   pump: pumpService,
-  wifi: wifiService,
 
   /**
    * Fetch irrigation history records from backend/ESP8266

@@ -3,7 +3,6 @@ import { OfflineBanner } from '../components/common/OfflineBanner';
 import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
 import { StatusBadge } from '../components/common/StatusBadge';
-import { WifiSettingsCard } from '../components/settings/WifiSettingsCard';
 import { useIrrigation } from '../context/IrrigationContext';
 import { getApiBaseUrl, setApiBaseUrl } from '../services/api';
 import {
@@ -11,10 +10,9 @@ import {
   CheckCircle2,
   Info,
   RefreshCw,
-  Globe,
-  Radio,
-  ShieldCheck,
-  AlertCircle
+  Sliders,
+  Wifi,
+  WifiOff
 } from 'lucide-react';
 
 export const SettingsPage = () => {
@@ -24,7 +22,6 @@ export const SettingsPage = () => {
     deviceInfo,
     lastSeen,
     sensorData,
-    wifiData,
     updateSettings,
     retryConnection
   } = useIrrigation();
@@ -85,49 +82,12 @@ export const SettingsPage = () => {
       <div>
         <h2 className="text-xl font-bold text-slate-900">System & Device Settings</h2>
         <p className="text-xs text-slate-500">
-          Configure ESP8266 REST API connection URL, thresholds, Wi-Fi hotspots, and safety limits
+          Configure ESP8266 REST API connection URL, thresholds, and hardware safety limits
         </p>
       </div>
 
-      {/* Cloud vs Local Network Deployment Architecture Notice */}
-      <div className="p-4 bg-gradient-to-r from-slate-50 to-brand-50/30 border border-slate-200/90 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-        <div className="flex items-start gap-3">
-          <div className="w-8 h-8 rounded-lg bg-brand-100 text-brand-700 flex items-center justify-center flex-shrink-0 mt-0.5">
-            <Globe className="w-4 h-4" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-slate-900">Cloud & Local Network Architecture</span>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-brand-100 text-brand-800">
-                Render Compatible
-              </span>
-            </div>
-            <p className="text-slate-600 mt-0.5 leading-relaxed">
-              When deployed to Render (HTTPS), browser requests to the ESP8266 private IP (e.g. <code className="font-mono text-[11px] font-semibold">192.168.137.253</code>) run directly from your local browser client. Ensure your device is on the same local Wi-Fi / hotspot.
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 self-end sm:self-auto flex-shrink-0">
-          <span className="text-[11px] text-slate-500">Cloud UI:</span>
-          <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold text-[11px]">
-            Online ●
-          </span>
-          <span className="text-[11px] text-slate-500 ml-1">ESP Link:</span>
-          <span className={`px-2 py-0.5 rounded-full font-semibold text-[11px] ${
-            deviceConnected
-              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-              : 'bg-rose-50 text-rose-700 border border-rose-200'
-          }`}>
-            {deviceConnected ? 'Active ●' : 'Offline ●'}
-          </span>
-        </div>
-      </div>
-
-      {/* 1. NEW REQUIREMENT: Wi-Fi Networks Management Section */}
-      <WifiSettingsCard />
-
       <form onSubmit={handleSubmit} className="space-y-6">
-        {/* 2. ESP8266 REST API Endpoint Configuration */}
+        {/* 1. ESP8266 REST API Endpoint Configuration */}
         <Card title="ESP8266 REST API Endpoint URL" subtitle="Configure target URL for microcontroller communication">
           <div className="space-y-3 text-xs sm:text-sm">
             <p className="text-slate-600">
@@ -139,7 +99,7 @@ export const SettingsPage = () => {
                 value={endpointUrl}
                 onChange={(e) => setEndpointUrl(e.target.value)}
                 className="flex-1 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs sm:text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
-                placeholder="http://192.168.137.253"
+                placeholder="http://ESP8266_IP/api"
                 required
               />
               <Button
@@ -157,7 +117,6 @@ export const SettingsPage = () => {
                 The frontend connects directly to this endpoint. Expected endpoints on ESP8266:
                 <code className="font-mono ml-1 font-bold">GET /api/device/status</code>,
                 <code className="font-mono ml-1 font-bold">GET /api/sensors</code>,
-                <code className="font-mono ml-1 font-bold">GET /api/wifi</code>,
                 <code className="font-mono ml-1 font-bold">POST /api/pump/start</code>,
                 <code className="font-mono ml-1 font-bold">POST /api/pump/stop</code>.
               </span>
@@ -165,7 +124,7 @@ export const SettingsPage = () => {
           </div>
         </Card>
 
-        {/* 3. Device Hardware Information */}
+        {/* 2. Device Hardware Information (From real device or offline) */}
         <Card title="ESP8266 NodeMCU Hardware Telemetry">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-xs sm:text-sm">
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
@@ -179,7 +138,7 @@ export const SettingsPage = () => {
               <div>
                 <span className="text-slate-500 text-xs block">Wi-Fi Connection</span>
                 <span className="font-semibold text-slate-800">
-                  {wifiData?.ssid || deviceInfo?.wifiSsid || (deviceConnected ? 'Connected' : '--')}
+                  {deviceInfo?.wifiSsid || (deviceConnected ? 'Connected' : '--')}
                 </span>
               </div>
               <StatusBadge
@@ -192,7 +151,7 @@ export const SettingsPage = () => {
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
               <span className="text-slate-500 text-xs block">ESP8266 IP Address</span>
               <span className="font-mono text-slate-800 font-semibold">
-                {wifiData?.ip || deviceInfo?.ipAddress || (deviceConnected ? endpointUrl.replace(/https?:\/\//, '').replace(/\/api.*/, '') : '--')}
+                {deviceInfo?.ipAddress || (deviceConnected ? endpointUrl.replace(/https?:\/\//, '').replace(/\/api.*/, '') : '--')}
               </span>
             </div>
 
@@ -219,7 +178,7 @@ export const SettingsPage = () => {
           </div>
         </Card>
 
-        {/* 4. Irrigation Policy & Thresholds */}
+        {/* 3. Irrigation Policy & Thresholds */}
         <Card title="Autonomous Thresholds & Safety Rules">
           <div className="space-y-4 text-xs sm:text-sm">
             {/* Default Mode */}
@@ -327,5 +286,3 @@ export const SettingsPage = () => {
     </div>
   );
 };
-
-export default SettingsPage;

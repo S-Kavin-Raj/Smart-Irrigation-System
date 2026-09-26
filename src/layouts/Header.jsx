@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { NavLink } from 'react-router-dom';
-import { Menu, User, Clock, RefreshCw, Settings } from 'lucide-react';
+import { Menu, User, Clock, RefreshCw } from 'lucide-react';
 import { useIrrigation } from '../context/IrrigationContext';
 
 export const Header = ({ onToggleSidebar }) => {
-  const { connectionStatus, deviceConnected, lastSeen, retryConnection, wifiData } = useIrrigation();
+  const { connectionStatus, deviceConnected, lastSeen, retryConnection } = useIrrigation();
   const [currentTime, setCurrentTime] = useState(new Date());
 
   useEffect(() => {
@@ -50,7 +49,7 @@ export const Header = ({ onToggleSidebar }) => {
             onClick={retryConnection}
             title={
               deviceConnected
-                ? `Connected to ESP8266 (${wifiData?.ssid || 'MSI 2988'}). IP: ${wifiData?.ip || '192.168.137.253'}`
+                ? `Connected to ESP8266. Last communication: ${lastSeen ? new Date(lastSeen).toLocaleTimeString() : 'Recent'}`
                 : 'Device not connected. Click to retry connection.'
             }
             className="flex items-center gap-2 px-3 py-1 bg-white hover:bg-slate-50 rounded-full border border-slate-200 text-xs font-medium transition cursor-pointer shadow-xs"
@@ -58,9 +57,7 @@ export const Header = ({ onToggleSidebar }) => {
             {connectionStatus === 'CONNECTED' ? (
               <>
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-emerald-700 font-semibold">
-                  {wifiData?.ssid ? `ESP8266 (${wifiData.ssid})` : 'ESP8266 Connected'}
-                </span>
+                <span className="text-emerald-700 font-semibold">ESP8266 Connected</span>
               </>
             ) : connectionStatus === 'CONNECTING' ? (
               <>
@@ -75,21 +72,6 @@ export const Header = ({ onToggleSidebar }) => {
             )}
           </button>
         </div>
-
-        {/* Settings Shortcut */}
-        <NavLink
-          to="/settings"
-          title="System & Wi-Fi Settings"
-          className={({ isActive }) =>
-            `p-2 rounded-lg border transition ${
-              isActive
-                ? 'bg-brand-50 text-brand-700 border-brand-200'
-                : 'bg-white hover:bg-slate-50 text-slate-600 hover:text-slate-900 border-slate-200 shadow-2xs'
-            }`
-          }
-        >
-          <Settings className="w-4 h-4" />
-        </NavLink>
 
         {/* Profile Avatar */}
         <div className="flex items-center gap-2 pl-2 border-l border-slate-200">

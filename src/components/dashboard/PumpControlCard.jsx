@@ -133,7 +133,7 @@ export const PumpControlCard = () => {
             <div className="text-xl font-bold text-slate-900 flex items-center justify-center gap-2">
               <span>
                 {!deviceConnected
-                  ? 'ESP OFFLINE'
+                  ? 'DEVICE OFFLINE'
                   : isPumpRunning
                   ? 'PUMP IS RUNNING'
                   : 'PUMP IS OFF'}
